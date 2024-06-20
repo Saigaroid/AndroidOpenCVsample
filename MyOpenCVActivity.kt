@@ -72,13 +72,26 @@ class MyOpenCVActivity : CameraBridgeViewBase.CvCameraViewListener2 {
             Imgproc.adaptiveThreshold(gray, thresh, 255.0, Imgproc.ADAPTIVE_THRESH_GAUSSIAN_C, Imgproc.THRESH_BINARY, 11, 2.0)
 
             // エッジ検出
-            Imgproc.Canny(thresh, edges, 50.0, 150.0)
+            val (lowThreshold, highThreshold) = calculateDynamicCannyThresholds(gray)
+            Imgproc.Canny(thresh, edges, lowThreshold, highThreshold)
         } finally {
             gray.release()
             thresh.release()
         }
 
         return edges
+    }
+
+    private fun calculateDynamicCannyThresholds(image: Mat): Pair<Double, Double> {
+        // 平均輝度と標準偏差を計算
+        val meanStdDev = Core.meanStdDev(image)
+        val mean = meanStdDev.mean[0]
+        val stdDev = meanStdDev.stddev[0]
+
+        // 平均輝度に基づいてCannyの閾値を調整
+        val lowThreshold = 0.66 * mean
+        val highThreshold = 1.33 * mean
+        return Pair(lowThreshold, highThreshold)
     }
 
     private fun isRectangle(points: Array<Point>): Boolean {
