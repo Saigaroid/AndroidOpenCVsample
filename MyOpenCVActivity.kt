@@ -14,41 +14,14 @@ class MyOpenCVActivity : CameraBridgeViewBase.CvCameraViewListener2 {
 
     override fun onCameraFrame(inputFrame: CvCameraViewFrame): Mat {
         val rgba = inputFrame.rgba()
-        val gray = Mat()
-        val hsv = Mat()
-
-        // グレースケール変換
-        Imgproc.cvtColor(rgba, gray, Imgproc.COLOR_RGBA2GRAY)
-        // HSV変換
-        Imgproc.cvtColor(rgba, hsv, Imgproc.COLOR_RGBA2HSV)
-
-        // ガウシアンブラーでノイズを低減
-        Imgproc.GaussianBlur(gray, gray, Size(5.0, 5.0), 0.0)
-
-        // コントラストを調整するためのCLAHE
-        val clahe = Imgproc.createCLAHE()
-        clahe.clipLimit = 2.0
-        clahe.apply(gray, gray)
-
-        // ヒストグラム均等化
-        Imgproc.equalizeHist(gray, gray)
-
-        // 適応的閾値処理
-        val thresh = Mat()
-        Imgproc.adaptiveThreshold(gray, thresh, 255.0, Imgproc.ADAPTIVE_THRESH_GAUSSIAN_C, Imgproc.THRESH_BINARY, 11, 2.0)
-
-        // エッジ検出（Cannyアルゴリズムを使用）
-        val edges = Mat()
-        Imgproc.Canny(thresh, edges, 50.0, 150.0)
+        val processedFrame = preprocessFrame(rgba)
 
         val contours = mutableListOf<MatOfPoint>()
         val hierarchy = Mat()
-        Imgproc.findContours(edges, contours, hierarchy, Imgproc.RETR_TREE, Imgproc.CHAIN_APPROX_SIMPLE)
+        Imgproc.findContours(processedFrame, contours, hierarchy, Imgproc.RETR_TREE, Imgproc.CHAIN_APPROX_SIMPLE)
 
-        // デバッグ用ログを追加
         Log.d(TAG, "Contours found: ${contours.size}")
 
-        // 画像の面積を取得
         val imageArea = rgba.rows() * rgba.cols()
 
         for (contour in contours) {
@@ -57,13 +30,10 @@ class MyOpenCVActivity : CameraBridgeViewBase.CvCameraViewListener2 {
             val approxDistance = Imgproc.arcLength(contour2f, true) * 0.02
             Imgproc.approxPolyDP(contour2f, approxCurve, approxDistance, true)
 
-            // 輪郭の近似結果のログ
             Log.d(TAG, "ApproxPolyDP result points: ${approxCurve.total()}")
 
-            // 輪郭の面積を計算
             val contourArea = Imgproc.contourArea(approxCurve)
 
-            // 面積が画像全体の一部であることを確認 (例: 画像面積の10%以上50%以下)
             if (approxCurve.total() == 4L && contourArea > 1000 && contourArea < imageArea * 0.5) {
                 val points = MatOfPoint(*approxCurve.toArray())
                 if (isRectangle(points.toArray())) {
@@ -73,16 +43,39 @@ class MyOpenCVActivity : CameraBridgeViewBase.CvCameraViewListener2 {
                     }
                 }
             }
+            approxCurve.release()
+            contour2f.release()
         }
 
-        // メモリ解放
-        gray.release()
-        thresh.release()
-        edges.release()
+        processedFrame.release()
         hierarchy.release()
-        hsv.release()
 
         return rgba
+    }
+
+    private fun preprocessFrame(rgba: Mat): Mat {
+        val gray = Mat()
+        val thresh = Mat()
+        val edges = Mat()
+
+        try {
+            Imgproc.cvtColor(rgba, gray, Imgproc.COLOR_RGBA2GRAY)
+            Imgproc.GaussianBlur(gray, gray, Size(5.0, 5.0), 0.0)
+
+            val clahe = Imgproc.createCLAHE()
+            clahe.clipLimit = 2.0
+            clahe.apply(gray, gray)
+
+            Imgproc.equalizeHist(gray, gray)
+            Imgproc.adaptiveThreshold(gray, thresh, 255.0, Imgproc.ADAPTIVE_THRESH_GAUSSIAN_C, Imgproc.THRESH_BINARY, 11, 2.0)
+            Imgproc.Canny(thresh, edges, 50.0, 150.0)
+
+        } finally {
+            gray.release()
+            thresh.release()
+        }
+
+        return edges
     }
 
     private fun isRectangle(points: Array<Point>): Boolean {
@@ -96,7 +89,6 @@ class MyOpenCVActivity : CameraBridgeViewBase.CvCameraViewListener2 {
             maxCosine = Math.max(maxCosine, cosine)
         }
 
-        // 角度のコサインが約90度 (cosineが0に近い)であることを確認
         return maxCosine < 0.3
     }
 
@@ -115,7 +107,6 @@ class MyOpenCVActivity : CameraBridgeViewBase.CvCameraViewListener2 {
     }
 
     private fun isValidAspectRatio(aspectRatio: Double): Boolean {
-        // 一般的なIDカードのアスペクト比は約1.58（85.60mm / 53.98mm）
         val lowerBound = 1.4
         val upperBound = 1.8
         return aspectRatio > lowerBound && aspectRatio < upperBound
