@@ -4,10 +4,8 @@ import org.opencv.imgproc.Imgproc
 import org.opencv.android.CameraBridgeViewBase.CvCameraViewFrame
 import org.opencv.core.MatOfPoint
 import org.opencv.core.Scalar
-import android.util.Log
 
 class MyOpenCVActivity : CameraBridgeViewBase.CvCameraViewListener2 {
-
     companion object {
         private const val TAG = "MyOpenCVActivity"
     }
@@ -20,8 +18,6 @@ class MyOpenCVActivity : CameraBridgeViewBase.CvCameraViewListener2 {
         val hierarchy = Mat()
         Imgproc.findContours(processedFrame, contours, hierarchy, Imgproc.RETR_TREE, Imgproc.CHAIN_APPROX_SIMPLE)
 
-        Log.d(TAG, "Contours found: ${contours.size}")
-
         val imageArea = rgba.rows() * rgba.cols()
 
         for (contour in contours) {
@@ -30,10 +26,10 @@ class MyOpenCVActivity : CameraBridgeViewBase.CvCameraViewListener2 {
             val approxDistance = Imgproc.arcLength(contour2f, true) * 0.02
             Imgproc.approxPolyDP(contour2f, approxCurve, approxDistance, true)
 
-            Log.d(TAG, "ApproxPolyDP result points: ${approxCurve.total()}")
-
+            // 輪郭の面積を取得
             val contourArea = Imgproc.contourArea(approxCurve)
 
+            // 面積が画像全体の50%以下
             if (approxCurve.total() == 4L && contourArea > 1000 && contourArea < imageArea * 0.5) {
                 val points = MatOfPoint(*approxCurve.toArray())
                 if (isRectangle(points.toArray())) {
@@ -59,17 +55,24 @@ class MyOpenCVActivity : CameraBridgeViewBase.CvCameraViewListener2 {
         val edges = Mat()
 
         try {
+            // グレースケール返還
             Imgproc.cvtColor(rgba, gray, Imgproc.COLOR_RGBA2GRAY)
+            // ガウシアンブラーでノイズ低減
             Imgproc.GaussianBlur(gray, gray, Size(5.0, 5.0), 0.0)
 
+            // コントラスト調整
             val clahe = Imgproc.createCLAHE()
             clahe.clipLimit = 2.0
             clahe.apply(gray, gray)
 
+            // ヒストグラム均等化
             Imgproc.equalizeHist(gray, gray)
-            Imgproc.adaptiveThreshold(gray, thresh, 255.0, Imgproc.ADAPTIVE_THRESH_GAUSSIAN_C, Imgproc.THRESH_BINARY, 11, 2.0)
-            Imgproc.Canny(thresh, edges, 50.0, 150.0)
 
+            // 適応的閾値処理
+            Imgproc.adaptiveThreshold(gray, thresh, 255.0, Imgproc.ADAPTIVE_THRESH_GAUSSIAN_C, Imgproc.THRESH_BINARY, 11, 2.0)
+
+            // エッジ検出
+            Imgproc.Canny(thresh, edges, 50.0, 150.0)
         } finally {
             gray.release()
             thresh.release()
@@ -89,6 +92,7 @@ class MyOpenCVActivity : CameraBridgeViewBase.CvCameraViewListener2 {
             maxCosine = Math.max(maxCosine, cosine)
         }
 
+        // 角度のコサインが約90度であること
         return maxCosine < 0.3
     }
 
@@ -107,6 +111,8 @@ class MyOpenCVActivity : CameraBridgeViewBase.CvCameraViewListener2 {
     }
 
     private fun isValidAspectRatio(aspectRatio: Double): Boolean {
+        // 一般的なIDカードのアスペクト比に近いこと
+        // 一般的なIDカードのアスペクト比は約1.58（85.60mm / 53.98mm）
         val lowerBound = 1.4
         val upperBound = 1.8
         return aspectRatio > lowerBound && aspectRatio < upperBound
